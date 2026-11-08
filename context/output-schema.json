@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Phishing Checker output",
+  "description": "The payload carried under envelope v1's `payload` key.",
+  "type": "object",
+  "required": ["abstained", "risk_level", "entries", "advice"],
+  "properties": {
+    "abstained": { "type": "boolean" },
+    "abstain_reason": { "type": ["string", "null"] },
+    "risk_level": { "enum": ["low", "medium", "high", "unsure"] },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "explanation", "part_ids", "evidence_quote"],
+        "properties": {
+          "category": { "enum": ["urgency", "sender_mismatch", "suspicious_link", "sensitive_request", "too_good_to_be_true", "attachment_lure", "impersonation", "other"] },
+          "explanation": { "type": "string", "minLength": 1 },
+          "part_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "evidence_quote": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "advice": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

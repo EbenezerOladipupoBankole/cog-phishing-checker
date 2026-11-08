@@ -1,0 +1,10 @@
+{
+  "email": {
+    "from": "PayPal Support <service@paypa1-security.com>",
+    "subject": "Urgent: Your account will be suspended",
+    "body": "Dear customer, we noticed unusual activity on your account. Your account will be suspended in 24 hours unless you confirm your identity. Click the link below and enter your password and card number to keep your account active.",
+    "links": [
+      { "text": "https://www.paypal.com/verify", "url": "http://paypa1-verify.co/login" }
+    ]
+  }
+}

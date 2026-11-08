@@ -1,0 +1,95 @@
+[workspace]
+name = "cog-phishing-checker"
+version = "0.1.0"
+description = "Checks a suspicious email for phishing warning signs and quotes the words behind each one."
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[dependencies]
+# 3.11+: the machinery reads this file's [tool.cog] manifest with tomllib
+python = ">=3.11"
+# reads cog.yaml-format manifests and *.fixture.yaml (eval)
+pyyaml = "*"
+# normative input/output schema validation
+jsonschema = "*"
+
+[tasks]
+# --- usage ops (face users and the Op layer) ---
+ask = "python src/cog_cli.py"
+# --- lifecycle ops (face the hosting environment) ---
+# serve starts the web-api entry point: the ENDPOINT is the usage surface,
+# starting it is lifecycle (see the interface's audience note in the manifest)
+serve = "python src/cog_api.py"
+check = "python src/cog_cli.py --check"
+resolve = "python src/cog_resolve.py"
+use = "python src/cog_use.py"
+eval = "python src/cog_eval.py"
+test = "python -m unittest discover -s tests -v"
+
+# NOTE: no [activation.env] — activation variables override the shell and
+# silently pin the endpoint. Defaults live in the
+# machinery; model.json and COG_MODEL_* override them.
+
+# ---------------------------------------------------------------------------
+# Profile manifest: openteams/cog-manifest [0.1], hosted in pixi.toml under
+# [tool.cog] (cog-execution ADR D9). `version` and `summary` are stated once,
+# in [workspace] above (version / description); readers fall back to them.
+# ---------------------------------------------------------------------------
+[tool.cog]
+schema = "openteams/cog-manifest [0.1]"
+id = "openteams/cog-phishing-checker"
+kind = "context"
+owner = "bankoleebenezer111@gmail.com"
+license = "Apache-2.0"
+frames = []
+memory = "none"
+# Evidence-tier boundary: prohibitions are structural today (no tool grants
+# exist that could perform them); they become Guard-enforced when a hosting
+# environment supplies tools.
+prohibits = ["send_external_message", "open_links", "execute_actions"]
+
+[tool.cog.context]
+instructions = "context/system.md"
+input_schema = "context/input-schema.json"
+output_schema = "context/output-schema.json"
+output_example = "context/output-example.json"
+
+# The requirement is a CAPABILITY; the named Cog is one satisfier, not the
+# only one. `pixi run resolve` verifies the candidate and writes the binding
+# record (model.json — gitignored installation state). A hosting environment
+# may re-satisfy this with its own model cog.
+[[tool.cog.requires]]
+capability = "model-endpoint/openai-compatible"
+locality = "any"
+satisfied_by = { cog = "openteams/cog-qwen", version = ">=0.1.0", source = "../cog-qwen" }
+
+# Entry points. `default = true` = the programmatic binding target. Tasks are
+# labeled by audience: usage ops face users and the Op layer; lifecycle ops
+# (resolve/serve/check/eval/test) face the hosting environment.
+[[tool.cog.interfaces]]
+name = "web-api"
+kind = "http-json"
+task = "serve"
+endpoint = "http://127.0.0.1:8093/ask"
+audience = "usage"      # the endpoint is the usage surface; starting it is lifecycle
+default = true
+
+[[tool.cog.interfaces]]
+name = "cli"
+kind = "command"
+task = "ask"
+audience = "usage"
+
+[[tool.cog.interfaces]]
+name = "health"
+kind = "command"
+task = "check"
+audience = "lifecycle"
+
+[tool.cog.io]
+accepts = ["task_request"]
+produces = ["phishing_assessment"]
+
+[tool.cog.evaluation]
+fixtures = ["evals/smoke.fixture.yaml"]
+

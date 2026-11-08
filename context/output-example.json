@@ -1,0 +1,32 @@
+{
+  "abstained": false,
+  "abstain_reason": null,
+  "risk_level": "high",
+  "entries": [
+    {
+      "category": "urgency",
+      "explanation": "It pressures you to act fast with a deadline, a common scam tactic.",
+      "part_ids": ["body"],
+      "evidence_quote": "Your account will be suspended in 24 hours"
+    },
+    {
+      "category": "sensitive_request",
+      "explanation": "Real companies don't ask for your password and card number by email.",
+      "part_ids": ["body"],
+      "evidence_quote": "enter your password and card number"
+    },
+    {
+      "category": "sender_mismatch",
+      "explanation": "It claims to be PayPal, but the sender's address uses a look-alike name with the number 1.",
+      "part_ids": ["from"],
+      "evidence_quote": "paypa1-security.com"
+    },
+    {
+      "category": "suspicious_link",
+      "explanation": "The link shows a PayPal address but really goes to a different site.",
+      "part_ids": ["link-1"],
+      "evidence_quote": "http://paypa1-verify.co/login"
+    }
+  ],
+  "advice": "Don't click the link or reply. Delete the email, and if you're worried, log in to PayPal by typing its address yourself."
+}

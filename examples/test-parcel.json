@@ -1,0 +1,10 @@
+{
+  "email": {
+    "from": "DHL Express <notify@dhl-parcel-delivery.info>",
+    "subject": "Your parcel is on hold",
+    "body": "Hello, we tried to deliver your package today but there is an unpaid customs fee of 2.99 USD. Your parcel will be returned to sender if the fee is not paid within 48 hours. Please pay now using the secure link below.",
+    "links": [
+      { "text": "Pay customs fee", "url": "http://dhl-fee-payment.xyz/pay" }
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Phishing Checker input",
+  "description": "One suspicious email, copied as plain text. Nothing is opened or visited.",
+  "type": "object",
+  "required": ["email"],
+  "additionalProperties": false,
+  "properties": {
+    "notes": {
+      "type": "string",
+      "description": "Optional context, e.g. 'forwarded by a colleague'. The model sees this too.",
+      "x-cog-input": { "widget": "textarea" }
+    },
+    "email": {
+      "type": "object",
+      "required": ["from", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "minLength": 1, "description": "Sender as shown, e.g. 'PayPal <service@paypal.com>'" },
+        "reply_to": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string", "minLength": 1, "x-cog-input": { "widget": "textarea" } },
+        "links": {
+          "type": "array",
+          "description": "Links in the email: the text the reader sees and the address it really goes to",
+          "items": {
+            "type": "object",
+            "required": ["url"],
+            "additionalProperties": false,
+            "properties": {
+              "text": { "type": "string" },
+              "url": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

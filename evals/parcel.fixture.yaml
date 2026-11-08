@@ -1,0 +1,15 @@
+# An unseen scam (not the worked example): a fake DHL customs-fee email.
+# Run with: pixi run eval
+name: parcel
+bundle: examples/test-parcel.json
+expect:
+  error: false
+  parsed: true
+  abstained: false
+  required_keys: [entries, risk_level, advice]
+  fields:
+    risk_level: high
+  min_entries: 2
+  categories_include: [suspicious_link]
+  grounded: true
+  forbid_tokens: []

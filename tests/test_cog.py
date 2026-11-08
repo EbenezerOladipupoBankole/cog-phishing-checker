@@ -1,0 +1,291 @@
+"""Model-free deterministic suite for cog-phishing-checker (created by cog-smith).
+
+Covers: manifest consistency, schema/example agreement, envelope mechanics,
+the grounding contract check, salvage, and identity matching. Extend with task-specific
+cases as task_logic.py grows — fixtures in evals/ cover the model-backed path.
+"""
+import contextlib
+import io
+import json
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+import cog_binding  # noqa: E402
+import cog_core     # noqa: E402
+import task_logic   # noqa: E402
+
+
+def sample_bundle():
+    return json.loads((ROOT / "examples" / "sample-bundle.json").read_text())
+
+
+class _FakeResponse(io.BytesIO):
+    """Just enough of an http.client.HTTPResponse for urlopen's caller."""
+
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+@contextlib.contextmanager
+def canned_model(content):
+    """Run the Cog against a canned model reply — no model, no network.
+    tests/mock_model.py in cog-smith is the live-loop equivalent; this is the
+    same shape in-process, so the deterministic suite can exercise the FULL
+    invocation path (render, parse, validate, envelope)."""
+    payload = {"model": cog_core.MODEL,
+               "choices": [{"message": {"role": "assistant",
+                                        "content": content}}]}
+
+    def _urlopen(request, timeout=None):
+        return _FakeResponse(json.dumps(payload).encode())
+
+    with mock.patch.object(cog_core, "health",
+                           lambda *a, **k: (True, "canned model")), \
+         mock.patch.object(cog_core.urllib.request, "urlopen", _urlopen):
+        yield
+
+
+class TestManifestConsistency(unittest.TestCase):
+    def setUp(self):
+        # either format: [tool.cog] in pixi.toml, or cog.yaml
+        self.manifest = cog_binding.load_manifest(ROOT)
+
+    def test_identity_fields(self):
+        for field in ("schema", "id", "version", "kind", "summary", "owner",
+                      "license", "io", "interfaces"):
+            self.assertIn(field, self.manifest)
+        self.assertEqual(self.manifest["schema"], "openteams/cog-manifest [0.1]")
+
+    def test_declared_context_files_exist(self):
+        ctx = self.manifest.get("context") or {}
+        for key in ("instructions", "input_schema", "output_schema",
+                    "output_example"):
+            self.assertIn(key, ctx)
+            self.assertTrue((ROOT / ctx[key]).exists(), ctx[key])
+
+    def test_interface_tasks_exist_in_pixi(self):
+        pixi = (ROOT / "pixi.toml").read_text()
+        for i in self.manifest.get("interfaces") or []:
+            self.assertIn(f"\n{i['task']} = ", "\n" + pixi, i["task"])
+
+    def test_exactly_one_default_interface(self):
+        defaults = [i for i in self.manifest["interfaces"] if i.get("default")]
+        self.assertEqual(len(defaults), 1)
+
+    def test_fixtures_exist(self):
+        for f in (self.manifest.get("evaluation") or {}).get("fixtures") or []:
+            self.assertTrue((ROOT / f).exists(), f)
+
+
+class TestSchemasAndExamples(unittest.TestCase):
+    def test_example_bundle_passes_input_validation(self):
+        self.assertEqual(cog_core.validate_input(sample_bundle()), [])
+
+    def test_output_example_passes_output_validation(self):
+        example = json.loads(
+            (ROOT / "context" / "output-example.json").read_text())
+        # validated against the schema only — the worked example cites items
+        # from a DIFFERENT hypothetical bundle, so skip semantic grounding
+        problems = [p for p in cog_core.validate_output(example, {"items": []})
+                    if p["check"] == "schema"]
+        self.assertEqual(problems, [])
+
+    def test_invalid_input_is_reported(self):
+        problems = cog_core.validate_input({"notes": "x"})   # missing email
+        self.assertTrue(problems)
+        self.assertTrue(all(p["check"] == "input" for p in problems))
+
+
+class TestSampleInvocation(unittest.TestCase):
+    """The contract, not `ok`. A Cog whose tests assert only `ok` can emit a
+    payload its own output schema refuses — which is exactly what the first
+    live triage sweep found. Assert the SCHEMA verdict."""
+
+    def test_a_full_invocation_carries_no_schema_problem(self):
+        example = (ROOT / "context" / "output-example.json").read_text()
+        with canned_model(example):
+            env = cog_core.invoke(sample_bundle())
+        self.assertTrue(env["ok"], env.get("error"))
+        self.assertIsInstance(env.get("payload"), dict)
+        self.assertEqual([p for p in env["problems"] if p["check"] == "schema"],
+                         [], env["problems"])
+
+    def test_the_binding_deadline_is_what_invoke_uses(self):
+        seen = {}
+
+        def _urlopen(request, timeout=None):
+            seen["timeout"] = timeout
+            return _FakeResponse(json.dumps(
+                {"model": cog_core.MODEL,
+                 "choices": [{"message": {"content": "{}"}}]}).encode())
+
+        with mock.patch.object(cog_core, "health",
+                               lambda *a, **k: (True, "canned model")), \
+             mock.patch.object(cog_core.urllib.request, "urlopen", _urlopen):
+            cog_core.invoke(sample_bundle())
+            self.assertEqual(seen["timeout"], cog_core.REQUEST_TIMEOUT_S)
+            cog_core.invoke(sample_bundle(), timeout=600)
+            self.assertEqual(seen["timeout"], 600)
+
+    def test_an_out_of_bounds_deadline_is_refused_by_name(self):
+        env = cog_core.invoke(sample_bundle(), timeout=1)
+        self.assertFalse(env["ok"])
+        self.assertEqual(env["error"]["code"], "invalid-timeout")
+
+    def test_the_deep_probe_honors_an_explicit_deadline(self):
+        """`--check --deep --timeout 600` used to be accepted and dropped, so
+        a completion probe needing 40 s reported DOWN (machinery 0.4.1)."""
+        seen = []
+
+        def _urlopen(request, timeout=None):
+            seen.append(timeout)
+            return _FakeResponse(json.dumps(
+                {"model": cog_core.MODEL,
+                 "choices": [{"message": {"content": "{}"}}]}).encode())
+
+        with mock.patch.object(cog_core.urllib.request, "urlopen", _urlopen):
+            cog_core.health(deep=True)
+            self.assertEqual(seen[-1], 30)          # the deep probe's own floor
+            cog_core.health(deep=True, deep_timeout=600)
+            self.assertEqual(seen[-1], 600)
+            cog_core.health(deep=False)
+            self.assertEqual(seen[-1], 3)           # liveness keeps its short one
+
+
+class TestEnvelopeMechanics(unittest.TestCase):
+    def test_envelope_shape(self):
+        env = cog_core._envelope("ask", True, payload={"abstained": False})
+        for field in ("envelope", "cog", "task", "ok", "error", "payload",
+                      "problems", "binding", "timing"):
+            self.assertIn(field, env)
+        self.assertEqual(env["envelope"], 1)
+        self.assertEqual(env["cog"]["id"], cog_core.SELF_ID["id"])
+
+    def test_fail_envelope_carries_code_and_problem(self):
+        env = cog_core._fail("ask", "model-unavailable", "down")
+        self.assertFalse(env["ok"])
+        self.assertEqual(env["error"]["code"], "model-unavailable")
+        self.assertEqual(env["problems"][0]["check"], "model-unavailable")
+
+    def test_binding_report_strips_workstation_paths(self):
+        report = cog_core._binding_report()
+        sat = report["record"].get("satisfier")
+        if isinstance(sat, dict):
+            self.assertNotIn("path", sat)
+
+
+class TestGroundingContractCheck(unittest.TestCase):
+    SOURCES = {"item-a": "the deadline moved to Friday after the vendor slip"}
+
+    def test_verbatim_quote_passes(self):
+        entry = {"title": "t", "item_ids": ["item-a"],
+                 "evidence_quote": "deadline moved to  Friday"}
+        self.assertEqual(cog_core.verbatim_quote_check(
+            entry, self.SOURCES, ids_field="item_ids"), [])
+
+    def test_paraphrase_fails(self):
+        entry = {"title": "t", "item_ids": ["item-a"],
+                 "evidence_quote": "the deadline was postponed to Friday"}
+        problems = cog_core.verbatim_quote_check(
+            entry, self.SOURCES, ids_field="item_ids")
+        self.assertTrue(any(p["check"] == "grounding" for p in problems))
+
+    def test_unknown_citation_fails(self):
+        entry = {"title": "t", "item_ids": ["item-zz"],
+                 "evidence_quote": "deadline moved to Friday"}
+        problems = cog_core.verbatim_quote_check(
+            entry, self.SOURCES, ids_field="item_ids")
+        self.assertTrue(any(p["check"] == "citation" for p in problems))
+
+
+class TestSalvageAndIdentity(unittest.TestCase):
+    def test_extract_json_plain_and_fenced(self):
+        obj = {"abstained": False, "entries": []}
+        self.assertEqual(cog_core.extract_json(json.dumps(obj)), obj)
+        fenced = "```json\n" + json.dumps(obj) + "\n```"
+        self.assertEqual(cog_core.extract_json(fenced), obj)
+
+    def test_wrapped_payload_is_unwrapped_and_marked(self):
+        inner = {"abstained": False, "entries": []}
+        parsed = cog_core.extract_json(json.dumps({"values": inner}))
+        self.assertEqual(parsed.get("_unwrapped_from"), "values")
+
+    def test_models_match_is_strict(self):
+        self.assertTrue(cog_core.models_match("m-1", "M-1 "))
+        self.assertFalse(cog_core.models_match("m-1-malicious", "m-1"))
+        self.assertTrue(cog_core.models_match("alias-x", "m-1", aliases=["alias-x"]))
+        self.assertFalse(cog_core.models_match("", "m-1"))
+
+
+class TestInputSeverity(unittest.TestCase):
+    def invoke_sample(self):
+        example = (ROOT / "context" / "output-example.json").read_text()
+        with canned_model(example):
+            return cog_core.invoke(sample_bundle())
+
+    def test_warning_only_input_proceeds_and_keeps_input_and_output_findings(self):
+        warning = cog_core.problem("input-thin", "optional evidence is thin", "warning")
+        output = cog_core.problem("output-note", "review the result", "warning")
+        with mock.patch.object(task_logic, "check_input", return_value=[warning]), \
+             mock.patch.object(task_logic, "check_output", return_value=[output]):
+            env = self.invoke_sample()
+        self.assertTrue(env["ok"], env)
+        self.assertIsNotNone(env["payload"])
+        self.assertEqual(env["problems"], [warning, output])
+
+    def test_input_errors_refuse_even_alongside_warnings(self):
+        error = cog_core.problem("input-bad", "required evidence is missing")
+        warning = cog_core.problem("input-thin", "optional evidence is thin", "warning")
+        for problems in ([error], [warning, error], [warning] * 5 + [error]):
+            with self.subTest(problems=problems), \
+                 mock.patch.object(task_logic, "check_input", return_value=problems):
+                with mock.patch.object(cog_core, "health") as work:
+                    env = cog_core.invoke(sample_bundle())
+                work.assert_not_called()
+                self.assertFalse(env["ok"])
+                self.assertEqual(env["error"]["code"], "invalid-input")
+                self.assertEqual(env["error"]["detail"], error["detail"])
+                self.assertEqual(env["problems"], problems)
+
+    def test_warn_input_proceeds(self):
+        warning = cog_core.problem("input-thin", "optional evidence is thin", "warn")
+        with mock.patch.object(task_logic, "check_input", return_value=[warning]):
+            env = self.invoke_sample()
+        self.assertTrue(env["ok"], env)
+        self.assertIn(warning, env["problems"])
+
+    def test_unrecognised_input_severity_refuses(self):
+        for severity in ("Error", "ERROR", "fatal", None, "missing"):
+            rejected = cog_core.problem("input-bad", "unusable input", severity)
+            if severity == "missing":
+                del rejected["severity"]
+            with self.subTest(severity=severity), \
+                 mock.patch.object(task_logic, "check_input", return_value=[rejected]):
+                with mock.patch.object(cog_core, "health") as work:
+                    env = cog_core.invoke(sample_bundle())
+                work.assert_not_called()
+                self.assertFalse(env["ok"])
+                self.assertEqual(env["error"]["code"], "invalid-input")
+                self.assertEqual(env["problems"], [rejected])
+
+    def test_input_warning_is_preserved_when_later_work_fails(self):
+        warning = cog_core.problem("input-thin", "optional evidence is thin", "warning")
+        with mock.patch.object(task_logic, "check_input", return_value=[warning]):
+            with mock.patch.object(cog_core, "health", return_value=(False, "offline")):
+                env = cog_core.invoke(sample_bundle())
+        self.assertFalse(env["ok"])
+        self.assertIn(warning, env["problems"])
+
+
+if __name__ == "__main__":
+    unittest.main()

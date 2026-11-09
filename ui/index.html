@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inbox Guard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F3F5F4; --card: #FFFFFF; --ink: #17242A; --soft: #5A6970; --line: #D4DCDA;
+  --field: #F8FAF9; --accent: #1D5C63;
+  --high: #B3261E; --high-bg: #FCE8E6; --med: #8A5A00; --med-bg: #FFF3D6;
+  --low: #1E6B47; --low-bg: #E3F4EA; --unsure: #4A5568; --unsure-bg: #ECEFF3;
+  --mark: #FFE08A; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11181B; --card: #182226; --ink: #E3EBEA; --soft: #9AABAD; --line: #2C3A3F;
+    --field: #1F2B30; --accent: #6FC3C9;
+    --high: #FF8A80; --high-bg: #3B1E1C; --med: #F5C35B; --med-bg: #3A2F14;
+    --low: #7BD3A2; --low-bg: #16301F; --unsure: #B7C1CF; --unsure-bg: #263038;
+    --mark: #6B5A1E; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 400 1rem/1.55 "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 60rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+h1, h2, h3 { font-family: "Archivo", system-ui, sans-serif; }
+h1 { font-weight: 800; font-size: clamp(2rem, 6vw, 3rem); line-height: 1; margin: 0 0 .5rem; letter-spacing: -0.02em; }
+.lede { color: var(--soft); margin: 0 0 1rem; max-width: 40rem; }
+.status { display: inline-flex; align-items: center; gap: .45rem; font-size: .9rem; color: var(--soft); margin-bottom: 1.75rem; }
+.dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--unsure); }
+.dot.ok { background: var(--low); } .dot.bad { background: var(--high); }
+.grid { display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; align-items: start; } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.25rem; }
+label { display: block; font-weight: 600; font-size: .9rem; margin: .9rem 0 .3rem; }
+label:first-child { margin-top: 0; }
+.hint { font-weight: 400; color: var(--soft); }
+input, textarea { width: 100%; font: inherit; color: var(--ink); background: var(--field);
+  border: 1px solid var(--line); border-radius: 8px; padding: .55rem .7rem; }
+textarea { min-height: 9rem; resize: vertical; }
+input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.link-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: .5rem; margin-bottom: .5rem; }
+.icon-btn { background: transparent; border: 1px solid var(--line); color: var(--soft); border-radius: 8px; padding: 0 .7rem; cursor: pointer; font: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1.25rem; }
+button.primary, button.secondary { font: inherit; font-weight: 600; border-radius: 999px; padding: .65rem 1.3rem; cursor: pointer; border: 2px solid var(--accent); }
+button.primary { background: var(--accent); color: var(--card); }
+button.secondary { background: transparent; color: var(--accent); }
+button:disabled { opacity: .55; cursor: wait; }
+.placeholder { color: var(--soft); }
+.waiting { display: flex; gap: .9rem; align-items: center; }
+.spinner { width: 1.6rem; height: 1.6rem; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); flex: none; }
+@media (prefers-reduced-motion: no-preference) { .spinner { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } }
+.verdict { border-radius: 12px; padding: 1rem 1.1rem; margin-bottom: 1.1rem; }
+.verdict h2 { margin: 0; font-size: 1.6rem; }
+.verdict p { margin: .25rem 0 0; }
+.v-high { background: var(--high-bg); color: var(--high); }
+.v-medium { background: var(--med-bg); color: var(--med); }
+.v-low { background: var(--low-bg); color: var(--low); }
+.v-unsure { background: var(--unsure-bg); color: var(--unsure); }
+.signs { list-style: none; margin: 0; padding: 0; }
+.signs li { border-top: 1px solid var(--line); padding: .8rem 0; }
+.signs li:first-child { border-top: 0; padding-top: 0; }
+.sign-name { font-family: "Archivo", system-ui, sans-serif; font-weight: 700; }
+.quote { display: block; margin-top: .35rem; padding-left: .7rem; border-left: 3px solid var(--mark); font-style: italic; overflow-wrap: anywhere; }
+.advice { background: var(--field); border-radius: 10px; padding: .8rem 1rem; margin-top: 1rem; }
+.advice strong { display: block; }
+.email-view { margin-top: 1.25rem; }
+.email-view h3 { font-size: 1rem; margin: 0 0 .5rem; }
+.part { font-size: .95rem; margin-bottom: .6rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+.part b { color: var(--soft); font-weight: 600; }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 .1em; }
+.problems { border: 1px solid var(--high); border-radius: 10px; padding: .7rem 1rem; margin-top: 1rem; }
+.problems ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+.meta { color: var(--soft); font-size: .85rem; margin-top: 1rem; }
+.error { color: var(--high); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Inbox Guard</h1>
+  <p class="lede">Paste in a suspicious email. Inbox Guard tells you how risky it looks and shows the exact words that raised a flag. Nothing is opened, clicked or sent.</p>
+  <div class="status" id="status"><span class="dot" id="dot"></span><span id="statusText">Checking the cog…</span></div>
+
+  <div class="grid">
+    <section class="card" aria-label="Email to check">
+      <label for="from">From <span class="hint">(as shown, e.g. PayPal &lt;service@paypal.com&gt;)</span></label>
+      <input id="from" autocomplete="off">
+      <label for="subject">Subject</label>
+      <input id="subject" autocomplete="off">
+      <label for="body">Email text</label>
+      <textarea id="body"></textarea>
+      <label>Links <span class="hint">(the text you see, and the address it really goes to)</span></label>
+      <div id="links"></div>
+      <button type="button" class="icon-btn" id="addLink" style="padding:.4rem .8rem">+ Add a link</button>
+      <div class="actions">
+        <button type="button" class="primary" id="check">Check email</button>
+        <button type="button" class="secondary" id="example">Load an example</button>
+      </div>
+    </section>
+
+    <section class="card" aria-live="polite" id="result">
+      <p class="placeholder">Your result will appear here.</p>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const LABELS = {
+  urgency: "Pressure to act fast", sender_mismatch: "Sender doesn’t match",
+  suspicious_link: "Suspicious link", sensitive_request: "Asks for money or private details",
+  too_good_to_be_true: "Too good to be true", attachment_lure: "Pushes you to open an attachment",
+  impersonation: "Pretends to be someone else", other: "Other warning sign"
+};
+const VERDICT = {
+  high: ["High risk", "This looks like a scam."],
+  medium: ["Medium risk", "Some warning signs. Be careful."],
+  low: ["Low risk", "No strong warning signs found. Still trust your instincts."],
+  unsure: ["Not sure", "There wasn’t enough to judge. Treat it with caution."]
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function addLink(text = "", url = "") {
+  const row = document.createElement("div");
+  row.className = "link-row";
+  row.innerHTML = `<input aria-label="Link text shown" placeholder="Text shown" value="${esc(text)}">
+    <input aria-label="Real link address" placeholder="Real address" value="${esc(url)}">
+    <button type="button" class="icon-btn" aria-label="Remove link">✕</button>`;
+  row.querySelector("button").onclick = () => row.remove();
+  $("links").appendChild(row);
+}
+
+function readEmail() {
+  const email = { from: $("from").value.trim(), body: $("body").value.trim() };
+  if ($("subject").value.trim()) email.subject = $("subject").value.trim();
+  const links = [...$("links").children].map(r => {
+    const [t, u] = r.querySelectorAll("input");
+    return { text: t.value.trim(), url: u.value.trim() };
+  }).filter(l => l.url);
+  if (links.length) email.links = links.map(l => l.text ? l : { url: l.url });
+  return { email };
+}
+
+// The same parts the cog builds in task_logic.py, so highlights line up with quotes.
+function parts(email) {
+  const p = [];
+  if (email.from) p.push(["from", "From", email.from]);
+  if (email.subject) p.push(["subject", "Subject", email.subject]);
+  if (email.body) p.push(["body", "Text", email.body]);
+  (email.links || []).forEach((l, i) => p.push([`link-${i + 1}`, `Link ${i + 1}`,
+    `shown text: ${l.text || "(none)"}\nactual address: ${l.url}`]));
+  return p;
+}
+
+function highlight(text, quotes) {
+  let html = esc(text);
+  [...new Set(quotes)].sort((a, b) => b.length - a.length).forEach(q => {
+    const eq = esc(q);
+    if (eq && html.includes(eq)) html = html.split(eq).join(`<mark>${eq}</mark>`);
+  });
+  return html;
+}
+
+function render(result, sent) {
+  const box = $("result");
+  if (!result || result.error && !result.payload) {
+    const msg = result?.detail || result?.error?.message || result?.error || "Something went wrong.";
+    box.innerHTML = `<p class="error">${esc(typeof msg === "string" ? msg : JSON.stringify(msg))}</p>`;
+    return;
+  }
+  const p = result.payload || {};
+  const level = VERDICT[p.risk_level] ? p.risk_level : "unsure";
+  const [title, line] = VERDICT[level];
+  let html = `<div class="verdict v-${level}"><h2>${title}</h2><p>${esc(p.abstained ? (p.abstain_reason || line) : line)}</p></div>`;
+  const entries = p.entries || [];
+  if (entries.length) {
+    html += `<ul class="signs">` + entries.map(e => `<li><span class="sign-name">${esc(LABELS[e.category] || e.category)}</span>
+      <div>${esc(e.explanation)}</div><span class="quote">“${esc(e.evidence_quote)}”</span></li>`).join("") + `</ul>`;
+  }
+  if (p.advice) html += `<div class="advice"><strong>What to do</strong>${esc(p.advice)}</div>`;
+  const quotesByPart = {};
+  entries.forEach(e => (e.part_ids || []).forEach(id => (quotesByPart[id] ||= []).push(e.evidence_quote)));
+  html += `<div class="email-view"><h3>The email, with the evidence highlighted</h3>` +
+    parts(sent.email).map(([id, name, text]) => `<div class="part"><b>${name}:</b> ${highlight(text, quotesByPart[id] || [])}</div>`).join("") + `</div>`;
+  if ((result.problems || []).length) {
+    html += `<div class="problems"><strong>Inbox Guard’s own checks found issues with this answer, so treat it with care:</strong><ul>` +
+      result.problems.map(x => `<li>${esc(x.detail || x)}</li>`).join("") + `</ul></div>`;
+  }
+  const secs = result.timing?.latency_s;
+  if (secs) html += `<p class="meta">Checked in ${Math.round(secs)} seconds${result.binding?.record?.model ? ` with ${esc(result.binding.record.model)}` : ""}.</p>`;
+  box.innerHTML = html;
+}
+
+async function check() {
+  const sent = readEmail();
+  if (!sent.email.from || !sent.email.body) {
+    $("result").innerHTML = `<p class="error">Please fill in at least “From” and the email text.</p>`;
+    return;
+  }
+  $("check").disabled = true;
+  const start = Date.now();
+  $("result").innerHTML = `<div class="waiting"><div class="spinner"></div><div><strong>Checking…</strong> <span id="elapsed">0:00</span><br><span class="placeholder">On a laptop without a graphics card this can take several minutes. You can leave this page open.</span></div></div>`;
+  const timer = setInterval(() => {
+    const s = Math.floor((Date.now() - start) / 1000);
+    const el = $("elapsed"); if (el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }, 1000);
+  try {
+    const r = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sent) });
+    render(await r.json(), sent);
+  } catch (e) {
+    render({ error: "Couldn’t reach Inbox Guard. Is ui/serve_ui.py still running?" }, sent);
+  } finally {
+    clearInterval(timer);
+    $("check").disabled = false;
+  }
+}
+
+function example() {
+  $("from").value = "DHL Express <notify@dhl-parcel-delivery.info>";
+  $("subject").value = "Your parcel is on hold";
+  $("body").value = "Hello, we tried to deliver your package today but there is an unpaid customs fee of 2.99 USD. Your parcel will be returned to sender if the fee is not paid within 48 hours. Please pay now using the secure link below.";
+  $("links").innerHTML = "";
+  addLink("Pay customs fee", "http://dhl-fee-payment.xyz/pay");
+}
+
+async function health() {
+  try {
+    const r = await fetch("/api/health");
+    const ok = r.ok && (await r.json()).ok;
+    $("dot").className = "dot " + (ok ? "ok" : "bad");
+    $("statusText").textContent = ok ? "Ready" : "The cog isn’t running. Start it with: pixi run serve";
+  } catch {
+    $("dot").className = "dot bad";
+    $("statusText").textContent = "Can’t reach the helper. Start it with: python3 ui/serve_ui.py";
+  }
+}
+
+$("addLink").onclick = () => addLink();
+$("check").onclick = check;
+$("example").onclick = example;
+addLink();
+health();
+</script>
+</body>
+</html>
